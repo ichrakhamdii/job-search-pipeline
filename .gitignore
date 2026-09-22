@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+output/
+
+# Personal data - use profile/candidate_profile.example.json as a template instead
+profile/candidate_profile.json
+raw_materials/

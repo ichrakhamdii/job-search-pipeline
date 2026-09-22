@@ -1,0 +1,39 @@
+{
+  "name": "Jane Doe",
+  "email": "jane.doe@example.com",
+  "location": "Country",
+  "open_to_remote": true,
+  "years_experience": 3,
+  "target_titles": [
+    "Machine Learning Engineer",
+    "Data Scientist",
+    "Backend Engineer"
+  ],
+  "summary": "One or two sentences describing your role, specialization, and years of experience.",
+  "skills": [
+    "Python", "SQL", "Docker", "Git"
+  ],
+  "experience": [
+    {
+      "title": "Job Title",
+      "company": "Company Name",
+      "dates": "Month Year - Month Year",
+      "description": "What you built or did, with concrete tech and outcomes."
+    }
+  ],
+  "projects": [
+    {
+      "title": "Project Name",
+      "dates": "Month Year",
+      "technologies": "Python, Pandas, Scikit-Learn",
+      "description": "What the project does and any measurable results."
+    }
+  ],
+  "education": [
+    "Degree, Field of Study, Institution (Year)"
+  ],
+  "certifications": [
+    "Issuer - Certification Name"
+  ],
+  "languages": ["English (Fluent)"]
+}
