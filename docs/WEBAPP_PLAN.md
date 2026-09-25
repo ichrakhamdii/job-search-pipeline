@@ -10,6 +10,9 @@ Someone with zero coding background should be able to:
 3. Paste a couple of free API keys (with links to get them)
 4. Click "Find Jobs"
 5. See a ranked, sortable results table and download it as CSV
+6. Pick a job and get a tailored CV + cover letter for it
+7. Get mock interview questions and a technical test matching that job
+8. Mark jobs as applied and track their status over time
 
 ## Recommended stack
 
@@ -56,15 +59,52 @@ Refactor `main.py`'s logic out of a `if __name__ == "__main__"` script into an i
 - Friendly error states: missing key → explain what's disabled instead of a stack trace; zero matches → explain the funnel instead of a blank page.
 - Mobile-responsive check.
 
-**Phase 4 — Optional, later: persistence**
-If people want to return and see only *new* matches since their last visit (today's "new jobs only" dedup, currently per-machine via `output/seen_jobs.json`), that needs real accounts and a database — e.g. a free-tier Postgres (Supabase/Neon) keyed by a session token or lightweight login. Not needed for a v1 launch; stateless-per-visit is an acceptable and honest starting point.
+**Phase 4 — Tailored CV & cover letter generator**
+
+*What it does:* paste a job description (or click "Tailor for this job" on a shortlist row, which auto-fills the description already stored from scraping) → an LLM rewrites the CV's summary and re-emphasizes the most relevant experience/project bullets for that specific role, and drafts a matching cover letter grounded in the candidate's *actual* achievements — not generic filler.
+
+*Tech:* same `groq_client.py` pattern as the judge stage — one new prompt + a Pydantic schema (`tailored_summary`, `emphasized_experience`, `cover_letter`). No new infrastructure.
+
+*Output:* MVP renders as Markdown in the browser with a copy button. Polish pass exports as a formatted `.docx` (via `python-docx`, free/open-source) since a resume people actually send should look like a resume, not a wall of Markdown.
+
+*Data flow:* input = the profile already in session + a job description (pasted or auto-filled). Stateless, on-demand — no persistence needed, same as the judge stage today.
+
+*Honesty guardrail:* frame every output as a first draft to personalize further, not a ready-to-send final document — the same posture `build_profile.py` already takes with extracted profiles. An LLM cover letter grounded in real project details reads very differently from one built on vague prompts; the prompt needs to force specificity.
+
+**Phase 5 — Mock interview questions & technical test generator**
+
+*What it does:* paste or pick a job description → generates likely interview questions (behavioral + role-specific technical, based on what the posting actually asks for) plus a small technical exercise matching the JD's real tech stack, with hints at what a strong answer covers.
+
+*Tech:* same pattern again — one more prompt + schema on the existing Groq call path.
+
+*Scope guardrail:* this generates questions and guidance, not an auto-graded coding sandbox. Building real code execution/grading (e.g. via Judge0 or similar) is a materially different, much larger project — worth keeping explicitly out of scope unless there's real demand for it later.
+
+*Data flow:* stateless, on-demand, identical shape to Phase 4. No persistence needed.
+
+**Phase 6 — Application tracker**
+
+*What it does:* mark a job (from the shortlist, or added manually) as Applied / Interviewing / Offer / Rejected, with a date and free-text notes, and see them all in one place on a later visit.
+
+*Why this one is different:* Phases 4 and 5 are "generate something and show it" — nothing needs to be remembered after the tab closes. Tracking is inherently about remembering state *across visits*, which a stateless app cannot do. This is the feature that actually forces the persistence question the original Phase 4 (now renumbered) left optional.
+
+*Two ways to build it, in order of how much I'd commit to up front:*
+
+1. **(Recommended starting point) Local export/import file.** The tracker is just a CSV/JSON the user downloads after a session and re-uploads next time to pick up where they left off — the same pattern the app already uses for shortlist CSVs. Zero new infrastructure, zero accounts, consistent with the stateless philosophy chosen for v1. Real downside: manual file handling, easy to lose, no access from a second device without carrying the file around.
+2. **(Real persistence — a genuine scope increase) Supabase free tier** (Postgres + built-in auth, generous free limits). Gives real accounts and cross-device access that survives forever, but adds authentication, a database schema, and ongoing account management to what has otherwise stayed a stateless tool. This is not a small add-on — it's the point where the project becomes a real multi-user service with accounts, not just a stateless calculator.
+
+*Recommendation:* ship option 1 first. If people actually use tracking enough to feel the pain of manual file handling, that's the signal to invest in option 2 — not before.
+
+**Phase 7 — Optional, later: real accounts + database**
+
+If Phase 6 validates that people want tracking badly enough to justify it, this is where Supabase (or Neon/similar free-tier Postgres) gets introduced properly — and it can then *also* solve the original "remember new jobs since last visit" problem per-user, not just per-machine. One persistence layer, two features unlocked. Not needed for a v1 launch.
 
 ## Open decisions (recommendations marked, but these are yours to confirm)
 
 1. **BYOK vs. shared keys** — recommend BYOK (above). Shared keys mean you personally pay/rate-limit for every visitor.
-2. **Persistence in v1** — recommend none (stateless). Adds real complexity (accounts, database) for a feature that's not needed to prove the concept.
+2. **Persistence in v1** — recommend none for the core pipeline, and the *local export/import* option (not a real database) for application tracking specifically. Real accounts are a deliberate later step, not a v1 requirement.
 3. **Keep the CLI tool alive alongside the web app** — recommend yes. The web app becomes an additive UI layer over the same core pipeline, not a replacement; your own daily-scheduled local run keeps working exactly as it does today.
+4. **How far to take the technical test generator** — recommend questions + guidance only, explicitly not an auto-graded execution sandbox, unless you decide later that's worth the added complexity.
 
 ## What's not changing
 
-The scraping sources, scoring logic (5-facet weighting), embeddings, and LLM judge stay exactly as they are today — this plan is purely about *how the pipeline is invoked and how results are shown*, not about the matching logic itself.
+The scraping sources, scoring logic (5-facet weighting), embeddings, and LLM judge stay exactly as they are today — this plan is purely about *how the pipeline is invoked and how results are shown*, plus a few new on-demand generation features layered on top, not about the matching logic itself.
