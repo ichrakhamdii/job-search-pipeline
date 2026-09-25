@@ -2,7 +2,7 @@
 
 Turn this from a locally-run CLI pipeline into a hosted, multi-user web app with real accounts: sign up, upload a CV, get a ranked job shortlist, generate tailored application material per job, and track applications over time — all persisted, all accessible from any device.
 
-*(Revision note: an earlier version of this plan proposed Streamlit for speed of delivery. That's been superseded by the stack below — a real FastAPI + React/Postgres + Docker architecture — which fits the full feature set much better, especially application tracking and per-user history, both of which need real persistence that Streamlit's stateless model can't give cleanly.)*
+
 
 ## Goal
 
