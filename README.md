@@ -2,7 +2,7 @@
 
 A personal job-search automation pipeline: it scrapes multiple job boards, scores each posting against your resume/profile across five weighted facets, re-ranks the shortlist with semantic embeddings, and runs the survivors through an LLM judge that catches false positives and flags visa/remote signals. The output is a ranked CSV of only new, genuinely relevant offers — not a wall of noise.
 
-It is not an auto-apply bot. It stops at "here's your shortlist" — you still review and apply yourself.
+It is not an auto-apply bot, you still review and apply yourself.
 
 ## Why I built this
 
