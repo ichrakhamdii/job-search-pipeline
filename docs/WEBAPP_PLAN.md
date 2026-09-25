@@ -31,8 +31,9 @@ Someone with zero coding background should be able to:
 | Frontend | **Next.js (React)** | Real component-based UI, full control over look and feel — this is where "beautiful" actually comes from, vs. Streamlit's fixed widget set. |
 | Frontend hosting | **Vercel free tier** | Built by the Next.js team, zero-config deploys from a GitHub branch, generous free tier that stays free indefinitely for a personal-scale project. |
 | Backend | **FastAPI (Python)** | Every existing pipeline module (`scrapers/`, `matcher.py`, `embedder.py`, `judge.py`, `cv_extractor.py`, `groq_client.py`) gets reused as an internal library, not rewritten — FastAPI just wraps it in REST endpoints. |
-| Backend packaging | **Docker** | Consistent environment from local dev to production; `docker-compose.yml` runs FastAPI + Postgres together locally with one command. |
-| Database | **PostgreSQL** | Real relational storage for users, profiles, job history, applications, and generated documents — replaces today's flat JSON files (`seen_jobs.json`, `candidate_profile.json`) with per-user rows. |
+| Backend packaging | **Docker** | Used for the production build/deploy (Render builds the image from the `Dockerfile`) and available locally if wanted — but not required locally, see below. |
+| Local dev | **`uvicorn` directly, against a free Neon dev database** | No local disk budget for Docker Desktop + a Postgres image + growing volumes. FastAPI runs as a plain Python process; `DATABASE_URL` points at a small free Neon project instead of a local Postgres container. Zero local Postgres footprint, and dev already matches production's real database engine (Postgres, not a SQLite stand-in that could hide type differences). |
+| Database | **PostgreSQL (Neon, both dev and prod)** | Real relational storage for users, profiles, job history, applications, and generated documents — replaces today's flat JSON files (`seen_jobs.json`, `candidate_profile.json`) with per-user rows. One free Neon project can hold a `dev` branch and a `prod` branch, so local development and production stay on the same engine without ever installing Postgres locally. |
 | Auth | **FastAPI-native (email + password + JWT)** | Full ownership, no third-party lock-in, consistent with the rest of the stack. `passlib`/`bcrypt` for password hashing, short-lived access tokens + refresh tokens. (NextAuth.js or Supabase Auth would be faster to bolt on, but hand rolling this keeps everything in one stack you fully control — flagged as an open decision below if you'd rather move faster.) |
 
 ### Being honest about "free" once we're self-hosting
@@ -40,9 +41,9 @@ Someone with zero coding background should be able to:
 Streamlit Community Cloud was free with zero caveats. A Dockerized FastAPI + Postgres backend needs somewhere to actually run in production, and that's where "free" gets nuanced:
 
 - **Backend hosting** — **Render** free tier can run a Dockerized web service, but free instances spin down after ~15 minutes of inactivity (the next request wakes it up with a several-second cold start). **Fly.io** has a small free allowance with no forced sleep, but tighter resource limits. **Railway** supports Docker well but moved off a truly-free tier to usage-based credits — usable, but budget a few dollars/month once past the trial credit, not indefinitely free.
-- **Database hosting** — running Postgres *itself* in a Docker container on a free host is fine for local dev, but unreliable for production (free container hosts rarely give a persistent volume that survives redeploys/restarts). **Neon** (serverless Postgres, generous free tier, no time limit) or **Supabase** (Postgres + optional auth, free tier) are the practical choices for a production database that won't quietly lose data. Docker/Compose remains exactly how local development works — the split is just "Docker Postgres locally, managed Postgres in production," which is a completely normal pattern.
+- **Database hosting** — running Postgres *itself* in a Docker container on a free host is fine for local dev, but unreliable for production (free container hosts rarely give a persistent volume that survives redeploys/restarts), and costs local disk during development that isn't always available. **Neon** (serverless Postgres, generous free tier, no time limit, branchable) sidesteps both problems — it's used for local dev *and* production, just as two different branches/projects.
 
-**Recommendation:** Vercel (frontend) + Render (backend) + Neon (database) as the most reliably-free combination for production, with Docker Compose for local dev mirroring that setup as closely as possible.
+**Recommendation:** Vercel (frontend) + Render (backend) + Neon (database, dev + prod) as the most reliably-free combination, with zero required local installs beyond Python itself. Docker stays relevant only for the production build Render runs — you don't need Docker Desktop running on your own machine at all to develop.
 
 ## Data model (rough)
 
@@ -64,7 +65,7 @@ Streamlit Community Cloud was free with zero caveats. A Dockerized FastAPI + Pos
 ## Phases
 
 **Phase 1 — Backend foundations**
-FastAPI app skeleton, Postgres schema + Alembic migrations, `docker-compose.yml` for local dev (FastAPI + Postgres). Refactor the existing pipeline modules into an importable service layer with no reliance on `.env`/module-level constants at import time — the same multi-user-safety issue flagged in the original plan applies here too, just inside FastAPI request handlers instead of Streamlit session state.
+FastAPI app skeleton, Postgres schema + Alembic migrations, run locally with `uvicorn` against a free Neon dev database (no local Postgres/Docker required). Refactor the existing pipeline modules into an importable service layer with no reliance on `.env`/module-level constants at import time — the same multi-user-safety issue flagged in the original plan applies here too, just inside FastAPI request handlers instead of Streamlit session state.
 
 **Phase 2 — Auth**
 Signup/login/JWT issuance and refresh, password hashing, protected-route middleware.
