@@ -6,8 +6,8 @@ import type {
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-const ACCESS_TOKEN_KEY = "job_copilot_access_token";
-const REFRESH_TOKEN_KEY = "job_copilot_refresh_token";
+const ACCESS_TOKEN_KEY = "job_search_pipeline_access_token";
+const REFRESH_TOKEN_KEY = "job_search_pipeline_refresh_token";
 
 export function getAccessToken(): string | null {
   return localStorage.getItem(ACCESS_TOKEN_KEY);

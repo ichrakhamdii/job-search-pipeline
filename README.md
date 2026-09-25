@@ -1,4 +1,4 @@
-# Job Copilot
+# Job Search Pipeline
 
 Scrapes multiple job boards, scores each posting against a candidate profile, re-ranks with semantic embeddings, and runs an LLM judge that catches false positives — producing a ranked shortlist of only new, genuinely relevant offers. Two ways to use it: a single-user **CLI** that runs locally, or a multi-user **web app** (accounts, async search, application tracking, AI-generated tailored CVs/cover letters/interview prep).
 

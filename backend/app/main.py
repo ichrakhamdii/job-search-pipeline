@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.v1.api import api_router
 from .core.config import settings
 
-app = FastAPI(title="Job Copilot API", version="1.0.0")
+app = FastAPI(title="Job Search Pipeline API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,

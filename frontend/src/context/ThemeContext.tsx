@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 
 type Theme = "light" | "dark";
-const THEME_KEY = "job_copilot_theme";
+const THEME_KEY = "job_search_pipeline_theme";
 
 interface ThemeContextValue {
   theme: Theme;

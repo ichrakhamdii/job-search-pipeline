@@ -84,7 +84,7 @@ development runs directly on the host - no Docker, no local Postgres, no local R
 `backend/`, since the image also needs the sibling `pipeline/` package:
 
 ```bash
-docker build -f backend/Dockerfile -t job-copilot-backend .
+docker build -f backend/Dockerfile -t job-search-pipeline-backend .
 ```
 
 Deploy the same image twice on your host of choice (see the root plan doc for the

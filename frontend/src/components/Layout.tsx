@@ -17,7 +17,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <Link to="/" className="brand">Job Copilot</Link>
+        <Link to="/" className="brand">Job Search Pipeline</Link>
         {isAuthenticated && (
           <nav>
             <Link to="/dashboard">Dashboard</Link>
