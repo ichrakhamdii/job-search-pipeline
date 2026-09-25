@@ -3,7 +3,7 @@ from typing import List
 
 from pydantic import BaseModel
 
-import groq_client
+from . import groq_client
 
 BATCH_SIZE = 15
 DESCRIPTION_CHAR_LIMIT = 1500
@@ -22,8 +22,8 @@ class JudgeResponse(BaseModel):
     verdicts: List[JobVerdict]
 
 
-def is_configured() -> bool:
-    return groq_client.is_configured()
+def is_configured(api_key: str | None = None) -> bool:
+    return groq_client.is_configured(api_key)
 
 
 def _build_profile_brief(profile: dict) -> str:
@@ -72,7 +72,8 @@ Include exactly one verdict per job listed below, in any order, using the correc
 """
 
 
-def judge_jobs(profile: dict, jobs: list[dict], batch_size: int = BATCH_SIZE) -> dict:
+def judge_jobs(profile: dict, jobs: list[dict], api_key: str | None = None,
+                batch_size: int = BATCH_SIZE) -> dict:
     """Run already-shortlisted jobs through a free open-source LLM (via Groq) for deeper
     reasoning about fit.
 
@@ -80,8 +81,11 @@ def judge_jobs(profile: dict, jobs: list[dict], batch_size: int = BATCH_SIZE) ->
     the input `jobs` list. Only call this on a pre-filtered shortlist (e.g. stage-1 >=60%
     matches) - an LLM pass over every raw scraped job would be far slower for little extra
     signal over the embedding stage.
+
+    api_key: pass explicitly in any multi-user context. Falls back to GROQ_API_KEY from the
+    environment for single-user CLI use.
     """
-    if not is_configured():
+    if not is_configured(api_key):
         print("[judge] Skipped: set GROQ_API_KEY to enable the LLM judge stage.")
         return {}
     if not jobs:
@@ -107,7 +111,7 @@ def judge_jobs(profile: dict, jobs: list[dict], batch_size: int = BATCH_SIZE) ->
         )
 
         try:
-            raw = groq_client.call_groq(system_prompt, user_prompt, log_prefix="judge")
+            raw = groq_client.call_groq(system_prompt, user_prompt, api_key=api_key, log_prefix="judge")
             content = raw["choices"][0]["message"]["content"]
             parsed = JudgeResponse.model_validate(json.loads(content))
             for verdict in parsed.verdicts:

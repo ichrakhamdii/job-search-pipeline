@@ -1,0 +1,34 @@
+# Optional. Given the local storage constraint that shaped this project's dev workflow
+# (see docs/WEBAPP_PLAN.md), the default local dev path is: `uvicorn` + a separate `celery
+# worker` process, both running directly on the host against a free Neon Postgres project
+# and a free Upstash Redis database - no local database, broker, or Docker image required.
+#
+# This compose file exists for anyone who *does* have disk budget and wants a fully
+# containerized local setup (or for CI), and mirrors the production shape - Postgres is
+# deliberately NOT included here since both dev and prod use managed Neon instead.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - backend/.env
+    depends_on:
+      - redis
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    env_file:
+      - backend/.env
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"

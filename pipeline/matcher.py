@@ -4,8 +4,8 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-import embedder
-from international import detect_signals, signals_label
+from . import embedder
+from .international import detect_signals, signals_label
 
 # Relative importance of each profile facet in the overall match score.
 CATEGORY_WEIGHTS = {
@@ -99,19 +99,20 @@ def _category_similarities_tfidf(categories: dict, category_names: list, job_tex
 EMBEDDING_TEXT_CHAR_LIMIT = 600
 
 
-def _category_similarities_embeddings(categories: dict, category_names: list, job_texts: list) -> dict:
+def _category_similarities_embeddings(categories: dict, category_names: list, job_texts: list,
+                                       voyage_api_key: str | None) -> dict:
     category_texts = [categories[c] for c in category_names]
     truncated_job_texts = [t[:EMBEDDING_TEXT_CHAR_LIMIT] for t in job_texts]
 
-    category_vectors = np.array(embedder.embed_texts(category_texts, input_type="query"))
-    job_vectors = np.array(embedder.embed_texts(truncated_job_texts, input_type="document"))
+    category_vectors = np.array(embedder.embed_texts(category_texts, input_type="query", api_key=voyage_api_key))
+    job_vectors = np.array(embedder.embed_texts(truncated_job_texts, input_type="document", api_key=voyage_api_key))
 
     sims = cosine_similarity(category_vectors, job_vectors)
     return {name: sims[i] for i, name in enumerate(category_names)}
 
 
 def rank_jobs(profile: dict, jobs: list[dict], top_n: int = 30,
-              min_score: float = MIN_MATCH_SCORE) -> list[dict]:
+              min_score: float = MIN_MATCH_SCORE, voyage_api_key: str | None = None) -> list[dict]:
     """Score each job against every facet of the candidate profile, on a real 0-100% scale.
 
     Semantic similarity per facet (skills, experience, projects, certifications, education) is
@@ -122,6 +123,9 @@ def rank_jobs(profile: dict, jobs: list[dict], top_n: int = 30,
     blend in a capped keyword-overlap ratio (exact tech-stack hits like "PyTorch" or "RAG" are
     strong signal on their own). Facets are combined with CATEGORY_WEIGHTS, a small bonus is
     added for visa/international/remote signals, and only jobs scoring >= min_score are returned.
+
+    voyage_api_key: pass explicitly in any multi-user context. Falls back to VOYAGE_API_KEY
+    from the environment for single-user CLI use.
     """
     if not jobs:
         return []
@@ -130,8 +134,8 @@ def rank_jobs(profile: dict, jobs: list[dict], top_n: int = 30,
     category_names = list(categories.keys())
     job_texts = [_normalize(f"{j.get('title','')} {j.get('description','')}") for j in jobs]
 
-    if embedder.is_configured():
-        raw_sims = _category_similarities_embeddings(categories, category_names, job_texts)
+    if embedder.is_configured(voyage_api_key):
+        raw_sims = _category_similarities_embeddings(categories, category_names, job_texts, voyage_api_key)
     else:
         print("[matcher] VOYAGE_API_KEY not set - falling back to TF-IDF keyword similarity.")
         raw_sims = _category_similarities_tfidf(categories, category_names, job_texts)
