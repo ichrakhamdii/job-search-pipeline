@@ -1,32 +1,35 @@
-# React + TypeScript + Vite
+# Frontend (React + Vite + TypeScript)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Web UI for the job search pipeline: sign up, upload a CV, run a search, review ranked matches, track applications, and generate tailored application material.
 
-Currently, two official plugins are available:
+## Structure
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```
+src/
+├── components/   # Reusable UI: Button, Input, Card, Spinner, Table, ApiKeysForm, Layout
+├── context/      # AuthContext (JWT storage + auto-refresh), ThemeContext (light/dark)
+├── features/
+│   ├── auth/         # Login, Register, ProtectedRoute
+│   ├── dashboard/    # Job search trigger + polling, ranked results table, application status board
+│   └── tailor/       # CV upload, tailored CV / cover letter / mock interview generation
+├── services/     # api.ts (typed Axios client), types.ts (mirrors backend schemas)
+└── App.tsx       # Routes and provider wiring
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## API keys
+
+Voyage AI, Groq, and Adzuna keys are entered by the user in the UI (`ApiKeysForm`) and stored only in that browser's `localStorage` — never sent anywhere except this app's own backend on each request, never persisted server-side.
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env   # set VITE_API_URL to your running backend
+npm run dev
+```
+
+## Build
+
+```bash
+npm run build
+```
