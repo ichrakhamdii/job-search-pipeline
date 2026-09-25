@@ -1,110 +1,103 @@
 # Web App Plan
 
-Turn this from a locally-run CLI pipeline into a hosted web app: upload a CV, get a ranked job shortlist in the browser, no git clone, no Python setup, no terminal.
+Turn this from a locally-run CLI pipeline into a hosted, multi-user web app with real accounts: sign up, upload a CV, get a ranked job shortlist, generate tailored application material per job, and track applications over time — all persisted, all accessible from any device.
+
+*(Revision note: an earlier version of this plan proposed Streamlit for speed of delivery. That's been superseded by the stack below — a real FastAPI + React/Postgres + Docker architecture — which fits the full feature set much better, especially application tracking and per-user history, both of which need real persistence that Streamlit's stateless model can't give cleanly.)*
 
 ## Goal
 
 Someone with zero coding background should be able to:
-1. Open a URL
+1. Sign up / log in
 2. Upload their CV (or fill a short form)
-3. Paste a couple of free API keys (with links to get them)
-4. Click "Find Jobs"
-5. See a ranked, sortable results table and download it as CSV
-6. Pick a job and get a tailored CV + cover letter for it
-7. Get mock interview questions and a technical test matching that job
-8. Mark jobs as applied and track their status over time
+3. Click "Find Jobs" and see a ranked, sortable results table
+4. Pick a job and get a tailored CV + cover letter for it
+5. Get mock interview questions and a technical test matching that job
+6. Mark jobs as applied and track status over time
+7. Come back later, from any device, and see all of the above still there
 
-## Recommended stack
+## Architecture
+
+```
+ Next.js frontend (Vercel)  ──HTTPS/REST──▶  FastAPI backend (Docker)  ──▶  PostgreSQL
+                                                    │
+                                                    ▼
+                                    scrapers/ · matcher.py · embedder.py
+                                    judge.py · cv_extractor.py · groq_client.py
+                                    (existing pipeline modules, reused as-is)
+```
 
 | Layer | Choice | Why |
 |---|---|---|
-| App framework | **Streamlit** | Pure Python — reuses `matcher.py`, `judge.py`, `embedder.py`, `scrapers/`, `cv_extractor.py` almost unchanged. Built-in widgets for exactly what's needed: file uploader, text inputs, dataframe display, download button, progress spinners. No separate frontend codebase to build or maintain. |
-| Hosting | **Streamlit Community Cloud** | Free tier, deploys directly from a GitHub branch (push → live URL, auto-redeploys on push), no server to manage. |
-| Data storage (v1) | **None — session-only** | No database, no user accounts. Everything lives in `st.session_state` for the duration of the visit. Simplest possible correct starting point; a persistence layer is a later phase, not a blocker for launch. |
-| API keys | **Bring-your-own-key (BYOK)**, entered in the UI per session | Avoids the site owner footing everyone's Voyage/Groq/Adzuna usage and avoids shared rate-limit contention (Voyage's free tier is capped at 3 req/min *per account* — sharing one key across every visitor would make the app unusably slow). Keys live only in that session's memory, never written to disk. |
+| Frontend | **Next.js (React)** | Real component-based UI, full control over look and feel — this is where "beautiful" actually comes from, vs. Streamlit's fixed widget set. |
+| Frontend hosting | **Vercel free tier** | Built by the Next.js team, zero-config deploys from a GitHub branch, generous free tier that stays free indefinitely for a personal-scale project. |
+| Backend | **FastAPI (Python)** | Every existing pipeline module (`scrapers/`, `matcher.py`, `embedder.py`, `judge.py`, `cv_extractor.py`, `groq_client.py`) gets reused as an internal library, not rewritten — FastAPI just wraps it in REST endpoints. |
+| Backend packaging | **Docker** | Consistent environment from local dev to production; `docker-compose.yml` runs FastAPI + Postgres together locally with one command. |
+| Database | **PostgreSQL** | Real relational storage for users, profiles, job history, applications, and generated documents — replaces today's flat JSON files (`seen_jobs.json`, `candidate_profile.json`) with per-user rows. |
+| Auth | **FastAPI-native (email + password + JWT)** | Full ownership, no third-party lock-in, consistent with the rest of the stack. `passlib`/`bcrypt` for password hashing, short-lived access tokens + refresh tokens. (NextAuth.js or Supabase Auth would be faster to bolt on, but hand rolling this keeps everything in one stack you fully control — flagged as an open decision below if you'd rather move faster.) |
 
-### Alternatives considered
+### Being honest about "free" once we're self-hosting
 
-- **Gradio + Hugging Face Spaces** — similar tradeoffs to Streamlit, slightly better for single-function demos, slightly worse for a multi-step form-like flow (CV upload → key entry → config → results). Not chosen, but a reasonable fallback if Streamlit's theming ends up too limiting.
-- **FastAPI backend + React/Next.js frontend (Vercel, free tier)** — most visually polished, most flexible, but roughly doubles engineering effort and requires maintaining two codebases in two languages. Recommended as a **phase 2** evolution once the Streamlit MVP validates that people actually want this, not as the starting point.
+Streamlit Community Cloud was free with zero caveats. A Dockerized FastAPI + Postgres backend needs somewhere to actually run in production, and that's where "free" gets nuanced:
 
-## Critical technical issue to fix first
+- **Backend hosting** — **Render** free tier can run a Dockerized web service, but free instances spin down after ~15 minutes of inactivity (the next request wakes it up with a several-second cold start). **Fly.io** has a small free allowance with no forced sleep, but tighter resource limits. **Railway** supports Docker well but moved off a truly-free tier to usage-based credits — usable, but budget a few dollars/month once past the trial credit, not indefinitely free.
+- **Database hosting** — running Postgres *itself* in a Docker container on a free host is fine for local dev, but unreliable for production (free container hosts rarely give a persistent volume that survives redeploys/restarts). **Neon** (serverless Postgres, generous free tier, no time limit) or **Supabase** (Postgres + optional auth, free tier) are the practical choices for a production database that won't quietly lose data. Docker/Compose remains exactly how local development works — the split is just "Docker Postgres locally, managed Postgres in production," which is a completely normal pattern.
 
-Several modules currently read API keys as **module-level constants at import time**:
+**Recommendation:** Vercel (frontend) + Render (backend) + Neon (database) as the most reliably-free combination for production, with Docker Compose for local dev mirroring that setup as closely as possible.
 
-```python
-# embedder.py, judge.py / groq_client.py, scrapers/adzuna.py — current pattern
-API_KEY = os.environ.get("VOYAGE_API_KEY", "")
-```
+## Data model (rough)
 
-This is fine for a single-user local script (one process, one `.env`, one user). It is **not safe** for a hosted multi-user Streamlit app, where one Python process serves every visitor concurrently:
-- A key read once at import time won't pick up a different user's key entered later in their session.
-- Worse, if not handled carefully, one user's key could end up being used for another user's request.
+- **users** — id, email, hashed_password, created_at
+- **profiles** — id, user_id (FK), name, location, years_experience, target_titles, skills, experience, projects, education, certifications, languages, updated_at *(one row per user, replaces `candidate_profile.json`)*
+- **seen_jobs** — id, user_id (FK), job_fingerprint, title, company, first_seen_at *(replaces the local `seen_jobs.json`, now per-user instead of per-machine)*
+- **shortlist_results** — id, user_id (FK), run_at, job data + scores (per-run results, so past searches stay visible)
+- **applications** — id, user_id (FK), job_fingerprint, status (`saved` / `applied` / `interviewing` / `offer` / `rejected`), applied_at, notes, updated_at
+- **generated_documents** — id, user_id (FK), job_fingerprint, type (`tailored_cv` / `cover_letter` / `interview_prep`), content, created_at *(so past generations aren't lost — a real advantage of having accounts)*
 
-**Fix:** refactor these modules so API keys are passed as explicit function parameters (or read from `st.session_state` at call time), not read once from `os.environ` at import time. This touches `embedder.py`, `groq_client.py`, `judge.py`, `scrapers/adzuna.py`, `scrapers/greenhouse_lever.py`, and `matcher.py`/`main.py`'s orchestration. This refactor is the prerequisite for everything else — do it before writing any UI code.
+## API surface (rough)
+
+- `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`
+- `POST /profile` (from CV upload, reusing `cv_extractor.py` + the extraction logic in `build_profile.py`) or manual form; `GET /profile`
+- `POST /jobs/search` — runs the scrape → score → judge pipeline for the signed-in user; `GET /jobs/results` — past run history
+- `POST /applications`, `GET /applications`, `PATCH /applications/{id}` — tracking
+- `POST /documents/tailor-cv`, `POST /documents/cover-letter`, `POST /documents/mock-interview`; `GET /documents` — generation history
 
 ## Phases
 
-**Phase 1 — Make the pipeline callable, not just runnable**
-Refactor `main.py`'s logic out of a `if __name__ == "__main__"` script into an importable function, e.g. `run_pipeline(profile: dict, api_keys: dict, target_titles: list) -> pd.DataFrame`, with no reliance on `.env`, no global state, no `print()`-as-UI. Fix the import-time API key issue above as part of this. The existing CLI (`main.py`) becomes a thin wrapper around this function, so local usage keeps working unchanged.
+**Phase 1 — Backend foundations**
+FastAPI app skeleton, Postgres schema + Alembic migrations, `docker-compose.yml` for local dev (FastAPI + Postgres). Refactor the existing pipeline modules into an importable service layer with no reliance on `.env`/module-level constants at import time — the same multi-user-safety issue flagged in the original plan applies here too, just inside FastAPI request handlers instead of Streamlit session state.
 
-**Phase 2 — Streamlit MVP**
-- Page 1: CV upload (reuses `cv_extractor.py` + the Groq structuring call from `build_profile.py`) *or* a manual form as fallback, matching the existing `candidate_profile.example.json` schema.
-- Page 2: API key inputs (Voyage, Groq, optionally Adzuna) with inline links to each provider's free signup, and a clear "these are used only for this session and never stored" note.
-- Page 3: Run button → progress indicator per stage (scraping / embedding / judging) → results as an interactive, sortable table with the same columns as today's CSV, plus a "Download CSV" button.
-- Deploy to Streamlit Community Cloud from this branch.
+**Phase 2 — Auth**
+Signup/login/JWT issuance and refresh, password hashing, protected-route middleware.
 
-**Phase 3 — Polish**
-- Custom theme (Streamlit supports a `config.toml` theme plus custom CSS injection) for a less "default Streamlit" look.
-- Friendly error states: missing key → explain what's disabled instead of a stack trace; zero matches → explain the funnel instead of a blank page.
-- Mobile-responsive check.
+**Phase 3 — Core pipeline API**
+CV upload → profile extraction endpoint, profile CRUD, job search endpoint wrapping the existing scrape/match/judge pipeline, results persisted per-user in Postgres.
 
-**Phase 4 — Tailored CV & cover letter generator**
+**Phase 4 — Next.js frontend MVP**
+Signup/login pages, CV upload flow, results table (sortable, filterable), deployed to Vercel and talking to the FastAPI backend over REST.
 
-*What it does:* paste a job description (or click "Tailor for this job" on a shortlist row, which auto-fills the description already stored from scraping) → an LLM rewrites the CV's summary and re-emphasizes the most relevant experience/project bullets for that specific role, and drafts a matching cover letter grounded in the candidate's *actual* achievements — not generic filler.
+**Phase 5 — Deploy backend + database**
+Stand up Render (backend) + Neon (database) for production, wire CORS and environment variables between Vercel and the hosted backend.
 
-*Tech:* same `groq_client.py` pattern as the judge stage — one new prompt + a Pydantic schema (`tailored_summary`, `emphasized_experience`, `cover_letter`). No new infrastructure.
+**Phase 6 — Tailored CV & cover letter generator**
+New endpoint + UI: paste or pick a job description → Groq-generated tailored summary/emphasis + cover letter, grounded in the user's real experience (not generic filler). Saved to `generated_documents` so it's not lost after the session. MVP output as Markdown/plain text; a `.docx` export (via `python-docx`) is a natural polish step once this works.
 
-*Output:* MVP renders as Markdown in the browser with a copy button. Polish pass exports as a formatted `.docx` (via `python-docx`, free/open-source) since a resume people actually send should look like a resume, not a wall of Markdown.
+**Phase 7 — Mock interview questions & technical test generator**
+Same generation pattern as Phase 6, new prompt/schema. Scope stays at question generation + guidance — not an auto-graded coding sandbox, which is a materially larger project (would need something like Judge0) and isn't warranted unless there's real demand for it later.
 
-*Data flow:* input = the profile already in session + a job description (pasted or auto-filled). Stateless, on-demand — no persistence needed, same as the judge stage today.
+**Phase 8 — Application tracker**
+Now genuinely simple given real accounts + Postgres — no local export/import workaround needed, unlike in the Streamlit version of this plan. Mark jobs as applied/interviewing/offer/rejected with notes, list and filter by status.
 
-*Honesty guardrail:* frame every output as a first draft to personalize further, not a ready-to-send final document — the same posture `build_profile.py` already takes with extracted profiles. An LLM cover letter grounded in real project details reads very differently from one built on vague prompts; the prompt needs to force specificity.
-
-**Phase 5 — Mock interview questions & technical test generator**
-
-*What it does:* paste or pick a job description → generates likely interview questions (behavioral + role-specific technical, based on what the posting actually asks for) plus a small technical exercise matching the JD's real tech stack, with hints at what a strong answer covers.
-
-*Tech:* same pattern again — one more prompt + schema on the existing Groq call path.
-
-*Scope guardrail:* this generates questions and guidance, not an auto-graded coding sandbox. Building real code execution/grading (e.g. via Judge0 or similar) is a materially different, much larger project — worth keeping explicitly out of scope unless there's real demand for it later.
-
-*Data flow:* stateless, on-demand, identical shape to Phase 4. No persistence needed.
-
-**Phase 6 — Application tracker**
-
-*What it does:* mark a job (from the shortlist, or added manually) as Applied / Interviewing / Offer / Rejected, with a date and free-text notes, and see them all in one place on a later visit.
-
-*Why this one is different:* Phases 4 and 5 are "generate something and show it" — nothing needs to be remembered after the tab closes. Tracking is inherently about remembering state *across visits*, which a stateless app cannot do. This is the feature that actually forces the persistence question the original Phase 4 (now renumbered) left optional.
-
-*Two ways to build it, in order of how much I'd commit to up front:*
-
-1. **(Recommended starting point) Local export/import file.** The tracker is just a CSV/JSON the user downloads after a session and re-uploads next time to pick up where they left off — the same pattern the app already uses for shortlist CSVs. Zero new infrastructure, zero accounts, consistent with the stateless philosophy chosen for v1. Real downside: manual file handling, easy to lose, no access from a second device without carrying the file around.
-2. **(Real persistence — a genuine scope increase) Supabase free tier** (Postgres + built-in auth, generous free limits). Gives real accounts and cross-device access that survives forever, but adds authentication, a database schema, and ongoing account management to what has otherwise stayed a stateless tool. This is not a small add-on — it's the point where the project becomes a real multi-user service with accounts, not just a stateless calculator.
-
-*Recommendation:* ship option 1 first. If people actually use tracking enough to feel the pain of manual file handling, that's the signal to invest in option 2 — not before.
-
-**Phase 7 — Optional, later: real accounts + database**
-
-If Phase 6 validates that people want tracking badly enough to justify it, this is where Supabase (or Neon/similar free-tier Postgres) gets introduced properly — and it can then *also* solve the original "remember new jobs since last visit" problem per-user, not just per-machine. One persistence layer, two features unlocked. Not needed for a v1 launch.
+**Phase 9 — Polish**
+Custom theming, friendly error/empty states, mobile responsiveness, and — if the BYOK decision below changes — per-user usage quotas against shared API keys.
 
 ## Open decisions (recommendations marked, but these are yours to confirm)
 
-1. **BYOK vs. shared keys** — recommend BYOK (above). Shared keys mean you personally pay/rate-limit for every visitor.
-2. **Persistence in v1** — recommend none for the core pipeline, and the *local export/import* option (not a real database) for application tracking specifically. Real accounts are a deliberate later step, not a v1 requirement.
-3. **Keep the CLI tool alive alongside the web app** — recommend yes. The web app becomes an additive UI layer over the same core pipeline, not a replacement; your own daily-scheduled local run keeps working exactly as it does today.
-4. **How far to take the technical test generator** — recommend questions + guidance only, explicitly not an auto-graded execution sandbox, unless you decide later that's worth the added complexity.
+1. **API keys: BYOK vs. shared keys with quotas.** With real accounts and a database, you *could* front Voyage/Groq/Adzuna with your own keys and track per-user usage/caps in Postgres, which is far more turnkey for a visitor than making them go get three free API keys themselves. Recommend still starting **BYOK** for the MVP (avoids you being liable for cost/abuse before the product is validated), and revisiting shared-keys-with-quotas once there's real usage data suggesting people want the friction removed.
+2. **Auth approach.** Recommend FastAPI-native JWT auth for full ownership. If you'd rather move faster and don't mind a dependency, NextAuth.js (frontend-side, supports Google/GitHub login easily) or Supabase Auth (bundles with a free Postgres too) would cut real implementation time.
+3. **Production hosting combo.** Recommend Vercel + Render + Neon (above) as the most reliably free. Railway is a fine alternative if a small monthly cost is acceptable.
+4. **Keep the CLI tool alive alongside the web app.** Recommend yes — the pipeline logic should live in one shared service layer that both the CLI (`main.py`) and the FastAPI backend import from, so there's no duplicated matching/scoring logic to keep in sync.
+5. **How far to take the technical test generator.** Recommend questions + guidance only (see Phase 7), not a real execution sandbox, unless demand justifies that separately-sized project later.
 
 ## What's not changing
 
-The scraping sources, scoring logic (5-facet weighting), embeddings, and LLM judge stay exactly as they are today — this plan is purely about *how the pipeline is invoked and how results are shown*, plus a few new on-demand generation features layered on top, not about the matching logic itself.
+The scraping sources, scoring logic (5-facet weighting), embeddings, and LLM judge stay exactly as they are today. This plan is about giving the pipeline a real multi-user home with accounts and persistence, and layering three new generation/tracking features on top — not about changing how matching itself works.
