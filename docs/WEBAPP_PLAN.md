@@ -18,7 +18,7 @@ Someone with zero coding background should be able to:
 ## Architecture
 
 ```
- React SPA frontend  ──HTTPS/REST──▶  FastAPI backend  ──▶  PostgreSQL (Neon)
+ React SPA (Vite+TS) frontend  ──HTTPS/REST──▶  FastAPI backend  ──▶  PostgreSQL (Neon)
                                             │        ▲
                                        enqueues       polls status
                                             ▼        │
@@ -32,7 +32,7 @@ Someone with zero coding background should be able to:
 
 | Layer | Choice | Why |
 |---|---|---|
-| Frontend | **React SPA** (framework choice open — see below) | Real component-based UI, full control over look and feel — this is where "beautiful" actually comes from, vs. Streamlit's fixed widget set. |
+| Frontend | **React SPA (Vite + TypeScript)** | Real component-based UI, full control over look and feel — this is where "beautiful" actually comes from, vs. Streamlit's fixed widget set. |
 | Backend | **FastAPI (Python)**, `api/v1/endpoints` + `core`/`models`/`schemas`/`services`/`workers` layout | Standard, widely-used FastAPI production structure. `services/` are thin orchestration + persistence wrappers around `pipeline/` — the actual scraping/matching/judging/generation logic is **not** duplicated here, it's imported from the shared package both the CLI and this backend depend on. |
 | Async job search | **Celery + Redis** | A real search run (8 sources, Voyage embeddings, Groq judge pass) takes several minutes under free-tier rate limits — running that inside an HTTP request would block or time out. `POST /jobs/search` enqueues a Celery task and returns a task id immediately; the client polls `GET /jobs/search/{id}` for status. |
 | Backend packaging | **Docker** | Used for the production build/deploy and available locally if wanted — but not required locally, see below. Build context is the repo root (not `backend/`), since the image needs the sibling `pipeline/` package too. |
@@ -41,9 +41,9 @@ Someone with zero coding background should be able to:
 | Task queue broker | **Redis (Upstash free tier)** | Same reasoning as Neon for Postgres — serverless, no local install, free tier covers dev and a low-volume production workload. |
 | Auth | **FastAPI-native (email + password + JWT)** | Full ownership, no third-party lock-in, consistent with the rest of the stack. `passlib`/`bcrypt` for password hashing, short-lived access tokens + refresh tokens. (NextAuth.js or Supabase Auth would be faster to bolt on, but hand rolling this keeps everything in one stack you fully control — flagged as an open decision below if you'd rather move faster.) |
 
-### Frontend framework — still open
+### Frontend framework — decided: Vite + React + TypeScript SPA
 
-Earlier drafts of this plan named Next.js/Vercel specifically; a more recent reference architecture used a Vite + TypeScript React SPA instead. Both are reasonable and the backend doesn't care which one calls it (plain REST). Next.js gives you SSR/routing conventions and Vercel's zero-config deploy; a Vite SPA is lighter-weight and deploys just as freely to Vercel, Netlify, or Cloudflare Pages. **Not yet decided** — pick when frontend work actually starts, since nothing on the backend depends on this choice.
+Earlier drafts named Next.js/Vercel; settled on a Vite + TypeScript React SPA per the reference architecture, structured as `frontend/src/{components,context,features,services}`. Deploys just as freely to Vercel, Netlify, or Cloudflare Pages as Next.js would, since it's a plain static build talking to the backend over REST.
 
 ### Being honest about "free" once we're self-hosting
 
@@ -87,8 +87,9 @@ CV upload → profile extraction (`app/services/profile_service.py`, reusing `pi
 **Phase 3.5 — Application tracking & document generation ✅ implemented, untested against a live DB**
 Originally scoped as later phases (6-8), but since the full backend was being built anyway, `app/services/application_service.py` and `app/services/document_service.py` (wrapping `pipeline/document_service.py`'s tailor_cv/cover_letter/mock_interview, verified working live against a real Groq key with genuinely grounded, non-generic output) are already in place alongside auth/profile/jobs.
 
-**Phase 4 — Frontend MVP**
-Signup/login pages, CV upload flow, results table (sortable, filterable) with search-status polling for the async job search, application tracker UI, document generation UI. Framework choice still open (see above) — not started.
+**Phase 4 — Frontend MVP ✅ built, untested against a live backend**
+`frontend/` (Vite + React + TypeScript) is scaffolded and structured per the reference architecture: `components/` (Button, Input, Card, Spinner, Table, ApiKeysForm, Layout), `context/` (AuthContext with JWT storage + auto-refresh-on-401, ThemeContext for light/dark), `features/auth` (Login, Register, ProtectedRoute), `features/dashboard` (search trigger with polling, ranked job table, application status board), `features/tailor` (CV upload, tailored-CV/cover-letter/interview-prep generation panel), `services/api.ts` (typed Axios client covering every backend endpoint) + `services/types.ts` (mirrors the backend Pydantic schemas). Verified: `npm run build` compiles with zero TypeScript errors.
+Not done: no backend has been running during this build, so no real signup/login/search/generation flow has been exercised through the actual UI yet — only build-time verification so far.
 
 **Phase 5 — Deploy backend + database + broker**
 Stand up Render (backend + worker, two services from the same Docker image) + Neon (database) + Upstash (Redis) for production, wire CORS and environment variables to the frontend host.
