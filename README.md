@@ -4,6 +4,26 @@ A personal job-search automation pipeline: it scrapes multiple job boards, score
 
 It is not an auto-apply bot. It stops at "here's your shortlist" — you still review and apply yourself.
 
+## Why I built this
+
+Scrolling through half a dozen job boards every day, without knowing if a posting actually matches my skills until I click into it, wastes hours. A lot of what shows up is also stale — listings that have been "open" for months, roles quietly already filled, or postings padded with keywords to look more relevant than they really are. I wanted something that does that scanning for me: pull from multiple sources at once, score each posting against my actual skills, experience, and projects instead of just a title keyword match, and only surface what's genuinely new and above a real match bar — not the same recycled listings every time I look.
+
+## Why these technologies
+
+- **LLM-based CV parsing instead of a traditional ATS parser.** Classic ATS resume parsers work by matching regex patterns against fixed section headers ("EXPERIENCE", "SKILLS", ...), which breaks the moment a CV uses a different layout, a different language, or an unconventional structure — and that's exactly what real CVs look like. Mine has a two-column certifications/languages section that trips up naive extraction. An LLM reads a CV the way a person would: it understands what a bullet point under a job title means regardless of formatting, and it works the same whether the CV is in English, French, or Arabic. I didn't want the accuracy of the whole pipeline to depend on how well my resume happened to match some parser's template assumptions.
+
+- **Voyage AI embeddings for matching, not just keyword search.** Keyword/TF-IDF matching would call a "Computer Vision Engineer" posting a mismatch against "image recognition" experience just because the wording differs. Embeddings capture meaning, not spelling, so semantically equivalent skills get credit even when the exact terms don't line up.
+
+- **A second LLM pass (the "judge") on top of the embedding score.** Embeddings alone still produce false positives — a posting can score high because the title matches while the actual role is completely different. (Caught a real one during testing: an "AI Engineer" listing that turned out to be Go-language video engineering work, nothing to do with ML.) The judge re-reads each shortlisted posting against my actual background and drops what doesn't really fit, instead of trusting one similarity number.
+
+- **Groq instead of a paid API for the judge.** I wanted this to run without needing a credit card or ongoing spend, so I used Groq's free tier, which serves capable open-weight models fast and at no cost.
+
+- **Multiple job sources instead of one.** No single board has everything, and some of the biggest ones (LinkedIn, Indeed) don't allow scraping under their Terms of Service. So the pipeline pulls from several public, key-free or free-tier APIs instead — more compliant, and broader coverage than any one source alone.
+
+- **"New jobs only" tracking.** Re-running the pipeline shouldn't show the same postings every day. Every job is fingerprinted and remembered, so each run only surfaces what's actually changed since the last one.
+
+- **Five separately weighted scoring facets instead of one blended number.** Skills, experience, projects, certifications, and education don't matter equally for every fit judgment, and lumping them into a single score hides *why* a job ranked the way it did. Scoring them separately, then combining with configurable weights, makes the ranking both more accurate and easier to sanity-check.
+
 ## How it works
 
 ```
