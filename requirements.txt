@@ -5,3 +5,7 @@ feedparser
 numpy
 pydantic
 python-dotenv
+pdfplumber
+pymupdf
+pytesseract
+pillow

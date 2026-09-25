@@ -1,17 +1,12 @@
-import os
 import json
-import time
 from typing import List
 
-import requests
 from pydantic import BaseModel
 
-API_URL = "https://api.groq.com/openai/v1/chat/completions"
-API_KEY = os.environ.get("GROQ_API_KEY", "")
-MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+import groq_client
+
 BATCH_SIZE = 15
 DESCRIPTION_CHAR_LIMIT = 1500
-MAX_RETRIES = 3
 
 
 class JobVerdict(BaseModel):
@@ -28,7 +23,7 @@ class JudgeResponse(BaseModel):
 
 
 def is_configured() -> bool:
-    return bool(API_KEY)
+    return groq_client.is_configured()
 
 
 def _build_profile_brief(profile: dict) -> str:
@@ -77,29 +72,6 @@ Include exactly one verdict per job listed below, in any order, using the correc
 """
 
 
-def _call_groq(system_prompt: str, user_prompt: str) -> dict:
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-    payload = {
-        "model": MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "response_format": {"type": "json_object"},
-        "temperature": 0.2,
-    }
-    for attempt in range(MAX_RETRIES):
-        resp = requests.post(API_URL, headers=headers, json=payload, timeout=60)
-        if resp.status_code == 429 and attempt < MAX_RETRIES - 1:
-            wait = float(resp.headers.get("retry-after", 5 * (attempt + 1)))
-            print(f"[judge] Rate limited, retrying in {wait:.0f}s...")
-            time.sleep(wait)
-            continue
-        resp.raise_for_status()
-        return resp.json()
-    raise RuntimeError("Groq API: exhausted retries")
-
-
 def judge_jobs(profile: dict, jobs: list[dict], batch_size: int = BATCH_SIZE) -> dict:
     """Run already-shortlisted jobs through a free open-source LLM (via Groq) for deeper
     reasoning about fit.
@@ -135,7 +107,7 @@ def judge_jobs(profile: dict, jobs: list[dict], batch_size: int = BATCH_SIZE) ->
         )
 
         try:
-            raw = _call_groq(system_prompt, user_prompt)
+            raw = groq_client.call_groq(system_prompt, user_prompt, log_prefix="judge")
             content = raw["choices"][0]["message"]["content"]
             parsed = JudgeResponse.model_validate(json.loads(content))
             for verdict in parsed.verdicts:

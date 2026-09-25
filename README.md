@@ -51,21 +51,33 @@ cd job-search-pipeline
 pip install -r requirements.txt
 ```
 
-**2. Create your profile**
-
-```bash
-cp profile/candidate_profile.example.json profile/candidate_profile.json
-```
-
-Edit `profile/candidate_profile.json` with your own skills, experience, projects, certifications, education, and target job titles. This file is gitignored — your data stays local.
-
-**3. Add your API keys**
+**2. Add your API keys**
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in whichever keys you have (see the table in `.env.example` for where to get each one, free). Nothing is required to run the pipeline at all — every stage falls back or skips cleanly without a key — but Voyage + Groq are recommended for real match quality, and Adzuna for volume.
+Fill in whichever keys you have (see the table in `.env.example` for where to get each one, free). Nothing is required to run the pipeline at all — every stage falls back or skips cleanly without a key — but Voyage + Groq are recommended for real match quality, and Adzuna for volume. `GROQ_API_KEY` is also what powers profile generation in the next step.
+
+**3. Create your profile — from your CV, automatically**
+
+```bash
+python build_profile.py path/to/your_cv.pdf
+```
+
+This extracts the text from your CV and sends it to the LLM judge's model to structure it into `profile/candidate_profile.json` — skills, experience, projects, education, certifications, and inferred target job titles. It works with CVs in any language (French, Arabic, etc. are translated to English for consistent matching against English-language postings), and automatically falls back to OCR if the PDF is a scanned image rather than real text (this requires the Tesseract binary — see below).
+
+The result is a first draft, not gospel: review `profile/candidate_profile.json` afterward and fix anything the extraction got wrong, especially around unusual PDF layouts (multi-column sections can occasionally cause a field to be misattributed).
+
+Prefer to skip the CV upload entirely? Copy the template and fill it in by hand instead:
+
+```bash
+cp profile/candidate_profile.example.json profile/candidate_profile.json
+```
+
+Either way, this file is gitignored — your data stays local and is never committed.
+
+**OCR prerequisite (only needed for scanned PDFs):** `pytesseract` is a wrapper around the Tesseract OCR engine, which is a separate system binary, not a Python package. If your CV has a real text layer (nearly all CVs made from Word/Google Docs/LaTeX do), OCR never triggers and you can skip this. If it does trigger, install Tesseract first: [Windows](https://github.com/UB-Mannheim/tesseract/wiki) · macOS (`brew install tesseract`) · Linux (`apt install tesseract-ocr`).
 
 **4. Run it**
 
